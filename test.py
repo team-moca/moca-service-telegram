@@ -1,8 +1,8 @@
-from telethon import TelegramClient, events, sync
-from dotenv import load_dotenv
 import os
 import random
 
+from dotenv import load_dotenv
+from telethon import TelegramClient, events, sync
 
 load_dotenv(verbose=True)
 
@@ -10,6 +10,7 @@ load_dotenv(verbose=True)
 # api_hash from https://my.telegram.org, under API Development.
 api_id = os.environ["TELEGRAM_API_ID"]
 api_hash = os.environ["TELEGRAM_API_HASH"]
+
 
 def verbuchseln(input):
     words = input.split()
@@ -28,21 +29,22 @@ def verbuchseln(input):
     sentence = []
 
     for rest in rests:
-        firstcharindex = random.randint(0, len(firstchars)-1)
+        firstcharindex = random.randint(0, len(firstchars) - 1)
         firstchar = firstchars.pop(firstcharindex)
         sentence.append(firstchar + rest)
 
     return str.lower(str.join(" ", sentence))
 
-with TelegramClient('moca-service-telegram', api_id, api_hash) as client:
+
+with TelegramClient("moca-service-telegram", api_id, api_hash) as client:
 
     print(client.get_me().stringify())
 
-    client.send_message('', 'Hallo!')
+    client.send_message("", "Hallo!")
 
-    #client.download_profile_photo('me')
-    #messages = client.get_messages('+4915170177034')
-    #messages[0].download_media()
+    # client.download_profile_photo('me')
+    # messages = client.get_messages('+4915170177034')
+    # messages[0].download_media()
 
     @client.on(events.NewMessage())
     async def handler(event):
