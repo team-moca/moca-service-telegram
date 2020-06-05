@@ -114,3 +114,4 @@ dmypy.json
 venv/
 *.session
 .env
+*.session-journal

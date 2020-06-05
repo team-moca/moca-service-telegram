@@ -107,10 +107,10 @@ class ServiceConnector(service_grpc.ServiceConnectorServicer):
 
         # TODO: Get this data from database
         id_to_phone = {
-            UUID("8c43ba0c-92b3-11ea-bb37-0242ac130002").bytes: os.environ[
+            str(UUID("8c43ba0c-92b3-11ea-bb37-0242ac130002")): os.environ[
                 "TEST_USER_1"
             ],
-            UUID("78f3647d-1e12-4bca-8ce5-a6e5f2da0508").bytes: os.environ[
+            str(UUID("78f3647d-1e12-4bca-8ce5-a6e5f2da0508")): os.environ[
                 "TEST_USER_2"
             ],
         }
