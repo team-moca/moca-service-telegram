@@ -5,10 +5,10 @@ from uuid import UUID, uuid4
 
 import anyio
 import grpc
-import messages_pb2
+from libmoca import messages_pb2
 import purerpc
-import service_connector_grpc as service_grpc
-import service_connector_pb2 as service
+from libmoca import service_connector_grpc as service_grpc
+from libmoca import service_connector_pb2 as service
 from dotenv import load_dotenv
 from google.protobuf.timestamp_pb2 import Timestamp
 

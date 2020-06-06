@@ -5,9 +5,9 @@ from concurrent import futures
 from uuid import UUID, uuid4
 
 import grpc
-import messages_pb2
-import service_connector_grpc as service_grpc
-import service_connector_pb2 as service
+from libmoca import messages_pb2
+from libmoca import service_connector_grpc as service_grpc
+from libmoca import service_connector_pb2 as service
 from dotenv import load_dotenv
 from google.protobuf.timestamp_pb2 import Timestamp
 from purerpc import Server
