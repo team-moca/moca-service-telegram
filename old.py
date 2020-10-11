@@ -11,42 +11,13 @@ from libmoca import service_connector_pb2 as service
 from dotenv import load_dotenv
 from google.protobuf.timestamp_pb2 import Timestamp
 from purerpc import Server
-from telethon import TelegramClient, events, sync
-from telethon.errors.rpcerrorlist import PhoneCodeInvalidError
-from telethon.tl.types import User
-from telethon.tl.types.auth import SentCode
 
-load_dotenv(verbose=True)
-
-api_id = os.environ["TELEGRAM_API_ID"]
-api_hash = os.environ["TELEGRAM_API_HASH"]
-
-
-class TgSessionStorage:
-    def __init__(self):
-        self.sessions = {}
-
-    def get_session(self, username):
-
-        print("searching session for {}...".format(username))
-
-        # hashed_username = hashlib.sha224(username.encode()).hexdigest()
-        hashed_username = username.replace("+", "00")
-
-        session = self.sessions.get(hashed_username)
-
-        if not session:
-            session = TelegramClient(f"sessions/{hashed_username}", api_id, api_hash)
-            self.sessions[hashed_username] = session
-            print("no session found. creating new session...")
-
-        return session
 
 
 class ServiceConnector(service_grpc.ServiceConnectorServicer):
     def __init__(self):
         print("init service connector")
-        self.session_storage = TgSessionStorage()
+        session_storage
 
     async def Login(self, message):
         print("logging in...")

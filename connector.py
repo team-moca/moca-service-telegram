@@ -1,12 +1,47 @@
 import asyncio
 import json
+import os
 from contextlib import AsyncExitStack, asynccontextmanager
 from random import randrange
 from asyncio_mqtt import Client, MqttError
+from dotenv import load_dotenv
+from telethon import TelegramClient, events, sync
+from telethon.errors.rpcerrorlist import PhoneCodeInvalidError
+from telethon.tl.types import User
+from telethon.tl.types.auth import SentCode
+
+load_dotenv(verbose=True)
+
+api_id = os.environ["TELEGRAM_API_ID"]
+api_hash = os.environ["TELEGRAM_API_HASH"]
 
 from core.configurator import Configurator
 
-configurator = Configurator()
+
+
+class TgSessionStorage:
+    def __init__(self):
+        self.sessions = {}
+
+    def get_session(self, username):
+
+        print("searching session for {}...".format(username))
+
+        # hashed_username = hashlib.sha224(username.encode()).hexdigest()
+        hashed_username = username.replace("+", "00")
+
+        session = self.sessions.get(hashed_username)
+
+        if not session:
+            session = TelegramClient(f"sessions/{hashed_username}", api_id, api_hash)
+            self.sessions[hashed_username] = session
+            print("no session found. creating new session...")
+
+        return session
+
+session_storage = TgSessionStorage()
+
+configurator = Configurator(session_storage)
 
 
 async def advanced_example():
