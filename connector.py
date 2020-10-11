@@ -1,139 +1,73 @@
-import hashlib
-import logging
-import os
-from concurrent import futures
-from uuid import UUID, uuid4
+import asyncio
+import json
+from contextlib import AsyncExitStack, asynccontextmanager
+from random import randrange
+from asyncio_mqtt import Client, MqttError
 
-import grpc
-from libmoca import messages_pb2
-from libmoca import service_connector_grpc as service_grpc
-from libmoca import service_connector_pb2 as service
-from dotenv import load_dotenv
-from google.protobuf.timestamp_pb2 import Timestamp
-from purerpc import Server
-from telethon import TelegramClient, events, sync
-from telethon.errors.rpcerrorlist import PhoneCodeInvalidError
-from telethon.tl.types import User
-from telethon.tl.types.auth import SentCode
+from core.configurator import Configurator
 
-load_dotenv(verbose=True)
-
-api_id = os.environ["TELEGRAM_API_ID"]
-api_hash = os.environ["TELEGRAM_API_HASH"]
+configurator = Configurator()
 
 
-class TgSessionStorage:
-    def __init__(self):
-        self.sessions = {}
+async def advanced_example():
 
-    def get_session(self, username):
+    async with AsyncExitStack() as stack:
 
-        print("searching session for {}...".format(username))
+        tasks = set()
+        stack.push_async_callback(cancel_tasks, tasks)
 
-        # hashed_username = hashlib.sha224(username.encode()).hexdigest()
-        hashed_username = username.replace("+", "00")
+        client = Client("localhost", client_id="TG000")
+        await stack.enter_async_context(client)
 
-        session = self.sessions.get(hashed_username)
+        manager = client.filtered_messages("telegram/configure/+")
+        messages = await stack.enter_async_context(manager)
+        task = asyncio.create_task(configure(client, messages, "telegram/configure/+"))
+        tasks.add(task)
 
-        if not session:
-            session = TelegramClient(f"sessions/{hashed_username}", api_id, api_hash)
-            self.sessions[hashed_username] = session
-            print("no session found. creating new session...")
+        # messages = await stack.enter_async_context(client.unfiltered_messages())
+        # task = asyncio.create_task(handle(client, messages, "[unfiltered] {}"))
+        # tasks.add(task)
 
-        return session
+        await client.subscribe("telegram/#")
 
-
-class ServiceConnector(service_grpc.ServiceConnectorServicer):
-    def __init__(self):
-        print("init service connector")
-        self.session_storage = TgSessionStorage()
-
-    async def Login(self, message):
-        print("logging in...")
-
-        phone = message.username
-        code = message.two_factor_code
-
-        tg = self.session_storage.get_session(phone)
-
-        if code == "":
-            code = None
-
-        if not tg.is_connected():
-            print("connecting to tg...")
-            await tg.connect()
-
-        if not await tg.is_user_authorized():
-            print("user is not yet authorized")
-
-            try:
-                si = await tg.sign_in(phone, code=code)
-                print(si)
-
-                if type(si) is SentCode:
-                    print("A 2FA code has been sent. Please re-sign-in with this code.")
-                    return service.LoginResponse(
-                        status=service.LoginStatus.LOGIN_NEEDS_SECOND_FACTOR
-                    )
-                elif type(si) is User:
-                    print("login successful.")
-                    return service.LoginResponse(status=service.LoginStatus.LOGIN_OK)
-
-                else:
-                    print("unknown si")
-                    return service.LoginResponse(status=service.LoginStatus.LOGIN_ERROR)
-
-            except Exception as e:
-                print("Got exception:")
-                print(type(e), e)
-
-                if type(e) is PhoneCodeInvalidError:
-                    return service.LoginResponse(
-                        status=service.LoginStatus.LOGIN_WRONG_2FA_CODE
-                    )
-
-                return service.LoginResponse(status=service.LoginStatus.LOGIN_ERROR)
-
-        else:
-            print("user already authorized")
-            return service.LoginResponse(status=service.LoginStatus.LOGIN_OK)
-
-        return service.LoginResponse(status=service.LoginStatus.LOGIN_ERROR)
-
-    async def SendMessage(self, message):
-
-        from_user_id = message.meta.from_user_id
-        to_user_id = message.meta.to_user_id
-
-        # TODO: Get this data from database
-        id_to_phone = {
-            str(UUID("8c43ba0c-92b3-11ea-bb37-0242ac130002")): os.environ[
-                "TEST_USER_1"
-            ],
-            str(UUID("78f3647d-1e12-4bca-8ce5-a6e5f2da0508")): os.environ[
-                "TEST_USER_2"
-            ],
-        }
-
-        from_user = id_to_phone.get(from_user_id)
-        to_user = id_to_phone.get(to_user_id)
-
-        print(f"{from_user} --> {to_user}")
-
-        tg = self.session_storage.get_session(from_user)
-
-        if message.content.HasField("text_message"):
-            print(f"sending message: {message.content.text_message.content}")
-            await tg.send_message(to_user, message.content.text_message.content)
-            return messages_pb2.SendMessageResponse(
-                status=messages_pb2.SendMessageStatus.OK
-            )
-
-        return messages_pb2.SendMessageResponse(
-            status=messages_pb2.SendMessageStatus.MESSAGE_CONTENT_NOT_IMPLEMENTED_FOR_SERVICE
-        )
+        await asyncio.gather(*tasks)
 
 
-server = Server(50060)
-server.add_service(ServiceConnector().service)
-server.serve(backend="asyncio")
+async def configure(client, messages, topic_filter):
+    async for message in messages:
+        print(f"[{message.topic} via {topic_filter}] {message.payload.decode()}")
+        flow_id = message.topic.split("/")[2]
+        flow = configurator.get_flow(flow_id)
+
+        data = json.loads(message.payload.decode())
+
+        step = await flow.current_step(user_input=data)
+        print(f"Current step: {flow.current_step.__name__}")
+
+        await client.publish(f"{message.topic}/response", json.dumps(step))
+
+
+async def cancel_tasks(tasks):
+    for task in tasks:
+        if task.done():
+            continue
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+async def main():
+
+    reconnect_interval = 3  # [seconds]
+    while True:
+        try:
+            await advanced_example()
+        except MqttError as error:
+            print(f'Error "{error}". Reconnecting in {reconnect_interval} seconds.')
+        finally:
+            await asyncio.sleep(reconnect_interval)
+
+
+asyncio.run(main())
