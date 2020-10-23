@@ -6,6 +6,7 @@ from random import randrange
 from asyncio_mqtt import Client, MqttError
 from dotenv import load_dotenv
 from telethon import TelegramClient, events, sync
+from pathlib import Path
 from telethon.errors.rpcerrorlist import PhoneCodeInvalidError
 from telethon.tl.types import User
 from telethon.tl.types.auth import SentCode
@@ -18,12 +19,11 @@ api_hash = os.environ["TELEGRAM_API_HASH"]
 from core.configurator import Configurator
 
 
-
 class TgSessionStorage:
     def __init__(self):
         self.sessions = {}
 
-    def get_session(self, username):
+    async def get_session(self, username):
 
         print("searching session for {}...".format(username))
 
@@ -35,6 +35,21 @@ class TgSessionStorage:
         if not session:
             session = TelegramClient(f"sessions/{hashed_username}", api_id, api_hash)
             self.sessions[hashed_username] = session
+
+            @session.on(events.NewMessage)
+            async def handle_message(event):
+                print(event.raw_text)
+
+                await mqtt.publish("moca/messages", json.dumps({
+                    "meta": {
+                        "service": "TELEGRAM",
+                        "user_id": (await session.get_me()).id
+                    },
+                    "message": event.raw_text
+                }))
+
+            await session.start()
+
             print("no session found. creating new session...")
 
         return session
@@ -43,6 +58,7 @@ session_storage = TgSessionStorage()
 
 configurator = Configurator(session_storage)
 
+mqtt = None
 
 async def advanced_example():
 
@@ -63,8 +79,10 @@ async def advanced_example():
         # task = asyncio.create_task(handle(client, messages, "[unfiltered] {}"))
         # tasks.add(task)
 
-        await client.subscribe("telegram/#")
+        global mqtt
+        mqtt = client
 
+        await client.subscribe("telegram/#")
         await asyncio.gather(*tasks)
 
 
@@ -96,6 +114,11 @@ async def cancel_tasks(tasks):
 async def main():
 
     reconnect_interval = 3  # [seconds]
+    # Initialize all tg sessions
+    for session in Path("sessions").rglob("*.session"):
+        await session_storage.get_session(session.name[:-8])
+
+
     while True:
         try:
             await advanced_example()

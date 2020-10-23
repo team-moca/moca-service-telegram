@@ -55,7 +55,7 @@ class ConfigFlow:
         return {"step": "finished", "data": {"contact": self.contact}}
 
     async def _login(self):
-        tg: TelegramClient = self.session_storage.get_session(self.phone)
+        tg: TelegramClient = await self.session_storage.get_session(self.phone)
 
         if not tg.is_connected():
             print("Connecting to Telegram...")
@@ -66,6 +66,7 @@ class ConfigFlow:
             me = await tg.get_me()
 
             self.contact = {
+                "id": me.id,
                 "name": f"{me.first_name} {me.last_name}",
                 "username": me.username,
                 "phone": f"+{me.phone}"
@@ -86,6 +87,7 @@ class ConfigFlow:
                 me = await tg.get_me()
 
                 self.contact = {
+                    "id": me.id,
                     "name": f"{me.first_name} {me.last_name}",
                     "username": me.username,
                     "phone": f"+{me.phone}"
