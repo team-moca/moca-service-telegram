@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "verification_code.schema.json",
+  "title": "Verification code",
+  "description": "A verification code which was sent to the user to verify ownership of the phone number",
+  "type": "object",
+  "properties": {
+    "verification_code": {
+      "title": "Verification code",
+      "type": "string",
+      "examples": ["12345", "La7p6nMKyd"]
+    }
+  },
+  "required": ["verification_code"]
+}
