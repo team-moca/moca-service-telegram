@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from telethon import TelegramClient, events, sync
 from pathlib import Path
 from telethon.errors.rpcerrorlist import PhoneCodeInvalidError
-from telethon.tl.types import User
+from telethon.tl.types import User, PeerUser, PeerChannel, PeerChat
 from telethon.tl.types.auth import SentCode
 
 load_dotenv(verbose=True)
@@ -40,10 +40,15 @@ class TgSessionStorage:
             async def handle_message(event):
                 print(event.raw_text)
 
+
                 await mqtt.publish("moca/messages", json.dumps({
                     "meta": {
                         "service": "TELEGRAM",
-                        "user_id": (await session.get_me()).id
+                        "message_id": event.message.id,
+                        "foward_from_id": event.forward.from_id if event.forward else None,
+                        "from_user_id": get_id(event.message.from_id),
+                        "to_chat_id": event.chat_id,
+                        "x_to_peer_id": get_id(event.message.to_id)
                     },
                     "message": event.raw_text
                 }))
@@ -59,6 +64,17 @@ session_storage = TgSessionStorage()
 configurator = Configurator(session_storage)
 
 mqtt = None
+
+def get_id(peer):
+    if type(peer) is PeerUser:
+        return peer.user_id
+    elif type(peer) is PeerChat:
+        return peer.chat_id
+    elif type(peer) is PeerChannel:
+        return peer.channel_id
+
+    # Otherwise it's an anonymous message which should return None
+    return None
 
 async def advanced_example():
 
