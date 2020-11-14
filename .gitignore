@@ -117,3 +117,4 @@ venv/
 *.session-journal
 .vscode/
 .idea/
+*.log

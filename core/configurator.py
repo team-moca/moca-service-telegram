@@ -1,5 +1,8 @@
 import random
 from .config_flow import ConfigFlow
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class Configurator:
@@ -7,7 +10,7 @@ class Configurator:
         super().__init__()
         self.session_storage = session_storage
         self.active_flows = {}
-        print("Initializing configurator")
+        _LOGGER.info("Starting configurator")
 
     def get_flow(self, flow_id):
 
