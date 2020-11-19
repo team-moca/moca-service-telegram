@@ -118,3 +118,4 @@ venv/
 .vscode/
 .idea/
 *.log
+config.yml
