@@ -17,5 +17,4 @@ class Startup(Dispatchable):
             i += 1
 
         self.logger.info(f"Initialized {i} sessions.")
-
-        return False
+        return True

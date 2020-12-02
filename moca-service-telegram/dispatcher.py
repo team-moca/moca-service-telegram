@@ -34,9 +34,12 @@ class Dispatcher:
             asyncio.get_event_loop().add_signal_handler(signal.SIGTERM, self.stop)
             asyncio.get_event_loop().add_signal_handler(signal.SIGINT, self.stop)
         except NotImplementedError:
-            pass # Ignore if not implemented. Means this program is running in windows, which has no signals.
+            # Ignore if not implemented. Means this program is running in windows, which has no signals.
+            pass
 
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._logger.info("Gather tasks now...")
+        await asyncio.gather(*self._tasks, return_exceptions=False)
+        self._logger.info("Finished the gathering.")
 
         self.stop()
 
@@ -55,10 +58,11 @@ class Dispatcher:
     async def run_task(self, dispatchable):
         while True:
             try:
-                if not await dispatchable.run():
+                if await dispatchable.run():
+                    self._logger.info(f"Stopping {dispatchable.__class__.__name__}")
                     break
             except asyncio.CancelledError:
-                self._logger.info(f"Asyncio cancelled {dispatchable.__name__}")
+                self._logger.info(f"Asyncio cancelled {dispatchable.__class__.__name__}")
                 break
             # except Exception:
             #     dispatchable.logger.exception("Error executing dispatchable.")

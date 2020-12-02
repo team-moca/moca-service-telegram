@@ -37,59 +37,40 @@ class Mosquitto(Dispatchable):
         self.logger.info("Setting up mqtt")
 
     async def run(self):
-        self.logger.info("Run mqtt")
-        while True:
-            self.logger.error("Loop mqtt")
-            try:
-                async with AsyncExitStack() as stack:
-                    tasks = set()
-                    stack.push_async_callback(self.cancel_tasks, tasks)
+        async with Client("localhost") as client:
 
-                    #client = Client(self.hostname, port=self.port, username=self.username, password=self.password,
-                    #                client_id=self.client_id)
-                    client = Client("localhost")
-                    await stack.enter_async_context(client)
+            await client.subscribe("telegram/#")
+            await client.subscribe("debug/#")
 
-                    manager = client.filtered_messages("telegram/configure/+")
-                    messages = await stack.enter_async_context(manager)
+            async with client.filtered_messages("telegram/#") as messages:
 
-                    tasks.add(
-                        asyncio.create_task(
-                            self.configure(client, messages, "telegram/configure/+")
-                        )
-                    )
+                async for message in messages:
 
-                    manager2 = client.filtered_messages("telegram/users/+/get_chats")
-                    messages2 = await stack.enter_async_context(manager2)
+                    uri = message.topic.split("/")
+                    luri = len(uri)
 
-                    tasks.add(
-                        asyncio.create_task(
-                            self.get_chats(client, messages2, "telegram/users/+/get_chats")
-                        )
-                    )
+                    # Ignore non telegram messages and responses from self
+                    if luri == 0 or uri[0] != "telegram" or uri[luri - 1] == "response":
+                        self.logger.info(f"Ignoring [{message.topic}]: {message.payload.decode()}")
+                        continue
 
-                    # messages = await stack.enter_async_context(client.unfiltered_messages())
-                    # task = asyncio.create_task(handle(client, messages, "[unfiltered] {}"))
-                    # tasks.add(task)
+                    # telegram/users
+                    if luri >= 3 and uri[1] == "users":
 
-                    # maybe global mqtt because of scoping?
+                        phone = uri[2]
 
-                    self._mqtt = client
+                        if luri == 4 and uri[3] == "get_chats":
+                            self.logger.info(f"get_chats [{message.topic}]: {message.payload.decode()}")
+                            await self.get_chats(client, phone)
+                            continue
 
-                    await client.subscribe("telegram/#")
-                    await asyncio.gather(*tasks)
+                    # telegram/configure
+                    if luri >= 3 and uri[1] == "configure":
+                        self.logger.info(f"configure [{message.topic}]: {message.payload.decode()}")
+                        await self.configure(client, uri[2], message)
+                        continue
 
-
-            except MqttError as error:
-                self.logger.error(
-                    "Error %s. Reconnecting in %s seconds.", error, self.reconnect_interval
-                )
-            finally:
-                self.logger.info("Finally go to sleep")
-                await asyncio.sleep(self.reconnect_interval)
-
-            return True
-
+                    self.logger.warning(f"No handler for [{message.topic}]: {message.payload.decode()}")
 
     @staticmethod
     async def cancel_tasks(tasks):
@@ -102,36 +83,31 @@ class Mosquitto(Dispatchable):
             except asyncio.CancelledError:
                 pass
 
-    async def configure(self, client, messages, topic_filter):
-        async for message in messages:
-            self.logger.debug("Configure telegram service (triggered by mqtt)")
-            flow_id = message.topic.split("/")[2]
-            flow = self.configurator.get_flow(flow_id)
+    async def configure(self, client, flow_id, message):
+        self.logger.debug("Configure telegram service (triggered by mqtt)")
+        flow = self._configurator.get_flow(flow_id)
 
-            data = json.loads(message.payload.decode())
+        data = json.loads(message.payload.decode())
 
-            step = await flow.current_step(user_input=data)
-            self.logger.debug("Configurator step: %s", flow.current_step.__name__)
+        step = await flow.current_step(user_input=data)
+        self.logger.debug("Configurator step: %s", flow.current_step.__name__)
 
-            await client.publish(f"{message.topic}/response", json.dumps(step))
+        await client.publish(f"{message.topic}/response", json.dumps(step))
 
-    async def get_chats(self, client, messages, topic_filter):
-        async for message in messages:
-            phone = message.topic.replace("telegram/users/", "").replace(
-                "/get_chats", ""
-            )
+    async def get_chats(self, client, phone):
 
-            self.logger.debug("Get chats for user %s (triggered by mqtt)", phone)
+        print("Get chats for user %s (triggered by mqtt)", phone)
 
-            tg: TelegramClient = await self.session_storage.get_session(phone)
+        tg: TelegramClient = await self._session_storage.get_session(phone)
 
-            if not await tg.is_user_authorized():
-                self.logger.warning("User not authorized")
-                break
+        if not await tg.is_user_authorized():
+            self.logger.warning("User not authorized")
+            return
 
-            chats = []
+        chats = []
 
-            for dialog in await tg.get_dialogs():
-                chats.append({"title": dialog.title, "chat_id": dialog.id})
+        for dialog in await tg.get_dialogs():
+            chats.append({"title": dialog.title, "chat_id": dialog.id})
 
-            await client.publish(f"{message.topic}/response", json.dumps(chats))
+        await client.publish(f"telegram/users/{phone}/get_chats/response", json.dumps(chats))
+

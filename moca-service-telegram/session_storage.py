@@ -53,8 +53,7 @@ class SessionStorage:
                     ),
                 )
 
-            self.logger.debug("No session found. Creating new session...")
-            await session.start()
+            self.logger.debug("No session found. Created new session...")
 
         return session
 

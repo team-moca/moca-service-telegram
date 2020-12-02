@@ -49,7 +49,7 @@ class Container(containers.DeclarativeContainer):
     dispatcher = providers.Factory(
         dispatcher.Dispatcher,
         dispatchables=providers.List(
+            mqtt,
             startup,
-            mqtt
         )
     )
