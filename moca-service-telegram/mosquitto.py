@@ -7,6 +7,7 @@ import uuid
 
 from asyncio_mqtt import Client, MqttError
 from telethon import TelegramClient
+from telethon.tl.types import PeerChat, Chat, User, Channel
 
 from .dispatcher import Dispatchable
 from .session_storage import SessionStorage
@@ -51,7 +52,7 @@ class Mosquitto(Dispatchable):
 
                     # Ignore non telegram messages and responses from self
                     if luri == 0 or uri[0] != "telegram" or uri[luri - 1] == "response":
-                        self.logger.info(f"Ignoring [{message.topic}]: {message.payload.decode()}")
+                        self.logger.info(f"Ignoring [{message.topic}]")
                         continue
 
                     # telegram/users
@@ -60,17 +61,38 @@ class Mosquitto(Dispatchable):
                         phone = uri[2]
 
                         if luri == 4 and uri[3] == "get_chats":
-                            self.logger.info(f"get_chats [{message.topic}]: {message.payload.decode()}")
+                            self.logger.info(
+                                f"get_chats [{message.topic}]: {message.payload.decode()}"
+                            )
                             await self.get_chats(client, phone)
+                            continue
+
+                        elif luri == 4 and uri[3] == "get_contacts":
+                            self.logger.info(
+                                f"get_contacts [{message.topic}]: {message.payload.decode()}"
+                            )
+                            await self.get_contacts(client, phone)
+                            continue
+
+                        elif luri == 5 and uri[3] == "get_chat":
+                            await self.get_chat(client, phone, int(uri[4]))
+                            continue
+
+                        elif luri == 5 and uri[3] == "get_contact":
+                            await self.get_contact(client, phone, int(uri[4]))
                             continue
 
                     # telegram/configure
                     if luri >= 3 and uri[1] == "configure":
-                        self.logger.info(f"configure [{message.topic}]: {message.payload.decode()}")
+                        self.logger.info(
+                            f"configure [{message.topic}]: {message.payload.decode()}"
+                        )
                         await self.configure(client, uri[2], message)
                         continue
 
-                    self.logger.warning(f"No handler for [{message.topic}]: {message.payload.decode()}")
+                    self.logger.warning(
+                        f"No handler for [{message.topic}]: {message.payload.decode()}"
+                    )
 
     @staticmethod
     async def cancel_tasks(tasks):
@@ -96,7 +118,7 @@ class Mosquitto(Dispatchable):
 
     async def get_chats(self, client, phone):
 
-        print("Get chats for user %s (triggered by mqtt)", phone)
+        self.logger.info("Get chats for user %s (triggered by mqtt)", phone)
 
         tg: TelegramClient = await self._session_storage.get_session(phone)
 
@@ -107,7 +129,112 @@ class Mosquitto(Dispatchable):
         chats = []
 
         for dialog in await tg.get_dialogs():
-            chats.append({"title": dialog.title, "chat_id": dialog.id})
 
-        await client.publish(f"telegram/users/{phone}/get_chats/response", json.dumps(chats))
+            self.logger.info(f"Found dialog \"{dialog.title}\"")
 
+            last_message = {
+                "message_id": dialog.message.id,
+                "contact_id": dialog.message.sender_id,
+                "chat_id": dialog.id,
+                "sent_datetime": dialog.message.date.isoformat(),
+                "message": {
+                    "type": "text" if dialog.message.message else "unsupported",
+                    "content": dialog.message.text,
+                },
+            }
+
+            chats.append(
+                {
+                    "name": dialog.title,
+                    "chat_id": dialog.id,
+                    "chat_type": "ChatType.group" if dialog.is_group else "ChatType.single",
+                    "last_message": last_message,
+                }
+            )
+
+        await client.publish(
+            f"telegram/users/{phone}/get_chats/response", json.dumps(chats)
+        )
+
+    @staticmethod
+    def convert_tg_message_to_message(tg_message):
+        return {
+            "message_id": tg_message.id,
+            "contact_id": tg_message.sender_id,
+            "chat_id": tg_message.chat_id,
+            "sent_datetime": tg_message.date.isoformat(),
+            "message": {
+                "type": "text" if tg_message.message else "unsupported",
+                "content": tg_message.text,
+            },
+        }
+
+    async def get_chat(self, client, phone: str, chat_id: int):
+        """Get a single chat for a user by chat_id."""
+
+        self.logger.info("Get chat %s for user %s (triggered by mqtt)", chat_id, phone)
+
+        tg: TelegramClient = await self._session_storage.get_session(phone)
+
+        if not await tg.is_user_authorized():
+            self.logger.warning("User not authorized")
+            return
+
+        chat: Chat = await tg.get_entity(chat_id)
+
+        users = await tg.get_participants(chat) if not chat.is_channel else []
+
+        contacts = [{
+            "id": user.id,
+            "name": f"{user.first_name} {user.last_name}",
+            "username": user.username,
+            "phone": f"+{user.phone}",
+        } for user in users]
+
+        messages = await tg.get_messages(chat, 25)
+
+        await client.publish(
+            f"telegram/users/{phone}/get_chat/{chat_id}/response",
+            json.dumps(
+                [self.convert_tg_message_to_message(tg_message) for tg_message in messages]
+            ),
+        )
+
+    async def get_contact(self, client, phone: str, contact_id: int):
+        """Get a single contact of a user by chat_id."""
+
+        self.logger.info("Get contact %s for user %s (triggered by mqtt)", contact_id, phone)
+
+        tg: TelegramClient = await self._session_storage.get_session(phone)
+
+        if not await tg.is_user_authorized():
+            self.logger.warning("User not authorized")
+            return
+
+        user_or_channel = await tg.get_entity(contact_id)
+
+        contact = {}
+
+        if type(user_or_channel) is User:
+            contact = {
+                "contact_id": user_or_channel.id,
+                "name": f"{user_or_channel.first_name} {user_or_channel.last_name}",
+                "username": user_or_channel.username,
+                "phone": f"+{user_or_channel.phone}",
+            }
+        elif type(user_or_channel) is Channel:
+            contact = {
+                "contact_id": contact_id,
+                "name": user_or_channel.username,
+                "username": user_or_channel.username,
+                "phone": None,
+            }
+        else:
+            pass
+
+        await client.publish(
+            f"telegram/users/{phone}/get_contact/{contact_id}/response",
+            json.dumps(
+                contact
+            ),
+        )
