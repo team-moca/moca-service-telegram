@@ -74,8 +74,8 @@ class Mosquitto(Dispatchable):
                             await self.get_contacts(client, phone)
                             continue
 
-                        elif luri == 5 and uri[3] == "get_chat":
-                            await self.get_chat(client, phone, int(uri[4]))
+                        elif luri == 5 and uri[3] == "get_messages":
+                            await self.get_messages(client, phone, int(uri[4]))
                             continue
 
                         elif luri == 5 and uri[3] == "get_contact":
@@ -169,7 +169,7 @@ class Mosquitto(Dispatchable):
             },
         }
 
-    async def get_chat(self, client, phone: str, chat_id: int):
+    async def get_messages(self, client, phone: str, chat_id: int):
         """Get a single chat for a user by chat_id."""
 
         self.logger.info("Get chat %s for user %s (triggered by mqtt)", chat_id, phone)
@@ -182,19 +182,10 @@ class Mosquitto(Dispatchable):
 
         chat: Chat = await tg.get_entity(chat_id)
 
-        users = await tg.get_participants(chat) if not chat.is_channel else []
-
-        contacts = [{
-            "id": user.id,
-            "name": f"{user.first_name} {user.last_name}",
-            "username": user.username,
-            "phone": f"+{user.phone}",
-        } for user in users]
-
         messages = await tg.get_messages(chat, 25)
 
         await client.publish(
-            f"telegram/users/{phone}/get_chat/{chat_id}/response",
+            f"telegram/users/{phone}/get_messages/{chat_id}/response",
             json.dumps(
                 [self.convert_tg_message_to_message(tg_message) for tg_message in messages]
             ),
