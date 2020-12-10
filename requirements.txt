@@ -1,5 +1,5 @@
 Telethon==1.17.5
-python-dotenv==0.13.0
-colorlog==4.6.2
-dependency-injector==4.4.1
+asyncio_mqtt==0.7.0
+coloredlogs==14.0
+dependency_injector==4.4.1
 PyYAML==5.3.1

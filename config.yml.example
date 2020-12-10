@@ -1,0 +1,10 @@
+log:
+  level: "INFO"
+  format: "[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s"
+
+telegram:
+  api_id: 123456
+  api_hash: 0c6dccc216d094c258cdb18a2a545124146be1c5
+
+mqtt:
+  hostname: localhost

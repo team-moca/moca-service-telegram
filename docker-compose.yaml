@@ -1,0 +1,6 @@
+version: "3"
+services:
+  moca-service-telegram:
+    build:
+      context: .
+    network_mode: host
