@@ -37,6 +37,8 @@ class Mosquitto(Dispatchable):
 
         self.logger.info("Setting up mqtt")
 
+        self._session_storage.callbacks.append(self.handle_event)
+
     async def run(self):
         async with Client("localhost") as client:
 
@@ -182,6 +184,15 @@ class Mosquitto(Dispatchable):
                 "content": tg_message.text,
             },
         }
+
+    async def handle_event(self, connector_id, event):
+        async with Client("localhost") as client:
+            await client.publish(
+                f"moca/via/telegram/{connector_id}/messages",
+                json.dumps(
+                    [self.convert_tg_message_to_message(event.message)]
+                ),
+            )
 
     async def get_messages(self, client, connector_id: str, chat_id: int):
         """Get a single chat for a user by chat_id."""

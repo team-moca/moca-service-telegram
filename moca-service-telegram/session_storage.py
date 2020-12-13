@@ -16,6 +16,8 @@ class SessionStorage:
 
         self.logger.info("Setup session storage")
 
+        self.callbacks = []
+
 
     async def delete_session(self, connector_id):
         self.sessions.pop(connector_id, None)
@@ -26,38 +28,22 @@ class SessionStorage:
         self.logger.debug("Get session for user %s", username)
 
         # hashed_username = hashlib.sha224(username.encode()).hexdigest()
-        hashed_username = username.replace("+", "00")
+        connector_id = username.replace("+", "00")
 
-        session = self.sessions.get(hashed_username)
+        session = self.sessions.get(connector_id)
 
         if not session:
             session = TelegramClient(
-                f"sessions/{hashed_username}", self.api_id, self.api_hash
+                f"sessions/{connector_id}", self.api_id, self.api_hash
             )
-            self.sessions[hashed_username] = session
+            self.sessions[connector_id] = session
 
             @session.on(events.NewMessage)
             async def handle_message(event):
                 self.logger.debug(event.raw_text)
 
-                await mqtt.publish(
-                    "moca/messages",
-                    json.dumps(
-                        {
-                            "meta": {
-                                "service": "TELEGRAM",
-                                "message_id": event.message.id,
-                                "foward_from_id": event.forward.from_id
-                                if event.forward
-                                else None,
-                                "from_user_id": self.get_id(event.message.from_id),
-                                "to_chat_id": event.chat_id,
-                                "x_to_peer_id": self.get_id(event.message.to_id),
-                            },
-                            "message": event.raw_text,
-                        }
-                    ),
-                )
+                for callback in self.callbacks:
+                    await callback(connector_id, event)
 
             self.logger.debug("No session found. Created new session...")
 
@@ -74,3 +60,16 @@ class SessionStorage:
 
         # Otherwise it's an anonymous message which should return None
         return None
+
+    @staticmethod
+    def convert_tg_message_to_message(tg_message):
+        return {
+            "message_id": tg_message.id,
+            "contact_id": tg_message.sender_id,
+            "chat_id": tg_message.chat_id,
+            "sent_datetime": tg_message.date.isoformat(),
+            "message": {
+                "type": "text" if tg_message.message else "unsupported",
+                "content": tg_message.text,
+            },
+        }
