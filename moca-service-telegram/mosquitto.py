@@ -11,7 +11,7 @@ from telethon.tl.types import PeerChat, Chat, User, Channel
 
 from .dispatcher import Dispatchable
 from .session_storage import SessionStorage
-from .configurator import Configurator
+from .configurator import ConfigFlow, Configurator
 
 
 class Mosquitto(Dispatchable):
@@ -107,7 +107,7 @@ class Mosquitto(Dispatchable):
 
     async def configure(self, client, flow_id, message):
         self.logger.debug("Configure telegram service (triggered by mqtt)")
-        flow = self._configurator.get_flow(flow_id)
+        flow: ConfigFlow = self._configurator.get_flow(flow_id)
 
         data = json.loads(message.payload.decode())
 
@@ -115,6 +115,11 @@ class Mosquitto(Dispatchable):
         self.logger.debug("Configurator step: %s", flow.current_step.__name__)
 
         await client.publish(f"{message.topic}/response", json.dumps(step))
+
+        if step.get("step") == "finished":
+
+            # Send all chats now to moca
+            await self.get_chats(client, flow.phone)
 
     async def get_chats(self, client, phone):
 
@@ -125,6 +130,8 @@ class Mosquitto(Dispatchable):
         if not await tg.is_user_authorized():
             self.logger.warning("User not authorized")
             return
+
+        me_id = (await tg.get_me()).id
 
         chats = []
 
@@ -153,7 +160,7 @@ class Mosquitto(Dispatchable):
             )
 
         await client.publish(
-            f"telegram/users/{phone}/get_chats/response", json.dumps(chats)
+            f"moca/via/telegram/{me_id}/chats", json.dumps(chats)
         )
 
     @staticmethod
