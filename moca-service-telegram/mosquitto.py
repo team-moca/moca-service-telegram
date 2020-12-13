@@ -74,6 +74,13 @@ class Mosquitto(Dispatchable):
                             await self.get_contacts(client, connector_id)
                             continue
 
+                        elif luri == 4 and uri[3] == "delete":
+                            self.logger.info(
+                                f"delete [{message.topic}]: {message.payload.decode()}"
+                            )
+                            await self.delete(client, connector_id)
+                            continue
+
                         elif luri == 5 and uri[3] == "get_messages":
                             await self.get_messages(client, connector_id, int(uri[4]))
                             continue
@@ -234,5 +241,29 @@ class Mosquitto(Dispatchable):
             f"telegram/users/{connector_id}/get_contact/{contact_id}/response",
             json.dumps(
                 contact
+            ),
+        )
+
+
+    async def delete(self, client, connector_id: str):
+        """Delete a connector."""
+
+        self.logger.info("Delete connector %s (triggered by mqtt)", connector_id)
+
+        tg: TelegramClient = await self._session_storage.get_session(connector_id)
+
+        if tg:
+
+            if not await tg.is_user_authorized():
+                self.logger.warning("User not authorized")
+                return
+
+            await tg.disconnect()
+            await self._session_storage.delete_session(connector_id)
+
+        await client.publish(
+            f"telegram/users/{connector_id}/delete/response",
+            json.dumps(
+                {"success": True}
             ),
         )

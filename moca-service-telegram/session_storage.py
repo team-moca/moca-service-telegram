@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from typing import Dict, Any
 
 from telethon import TelegramClient, events
@@ -14,6 +15,11 @@ class SessionStorage:
         self.api_hash = options.pop("api_hash")
 
         self.logger.info("Setup session storage")
+
+
+    async def delete_session(self, connector_id):
+        self.sessions.pop(connector_id, None)
+        os.remove(f"sessions/{connector_id}.session")
 
     async def get_session(self, username):
 
@@ -32,7 +38,7 @@ class SessionStorage:
 
             @session.on(events.NewMessage)
             async def handle_message(event):
-                self.logger.trace(event.raw_text)
+                self.logger.debug(event.raw_text)
 
                 await mqtt.publish(
                     "moca/messages",
