@@ -55,8 +55,6 @@ class SessionStorage:
 
             self.logger.debug("No session found. Created new session...")
 
-        await session.start()
-
         return session
 
     @staticmethod

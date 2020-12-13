@@ -10,8 +10,9 @@ from . import schema
 
 
 class ConfigFlow:
-    def __init__(self, session_storage: SessionStorage):
+    def __init__(self, flow_id, session_storage: SessionStorage):
         super().__init__()
+        self.flow_id = flow_id
         self.session_storage = session_storage
         self.current_step = self.step_user
 
@@ -26,7 +27,7 @@ class ConfigFlow:
         self.current_step = self.step_user
 
         # TODO validate schema
-        if user_input and user_input.get("phone"):
+        if user_input:
             self.phone = user_input.get("phone")
             return await self._login()
 
@@ -62,7 +63,7 @@ class ConfigFlow:
         return {"step": "finished", "data": {"contact": self.contact}}
 
     async def _login(self):
-        tg: TelegramClient = await self.session_storage.get_session(self.phone)
+        tg: TelegramClient = await self.session_storage.get_session(self.flow_id)
 
         if not tg.is_connected():
             print("Connecting to Telegram...")
@@ -132,6 +133,6 @@ class Configurator:
         flow = self.active_flows.get(flow_id)
 
         if not flow:
-            self.active_flows[flow_id] = ConfigFlow(self.session_storage)
+            self.active_flows[flow_id] = ConfigFlow(flow_id, self.session_storage)
 
         return self.active_flows.get(flow_id)

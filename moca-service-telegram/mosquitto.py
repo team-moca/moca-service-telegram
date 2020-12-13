@@ -58,28 +58,28 @@ class Mosquitto(Dispatchable):
                     # telegram/users
                     if luri >= 3 and uri[1] == "users":
 
-                        phone = uri[2]
+                        connector_id = uri[2]
 
                         if luri == 4 and uri[3] == "get_chats":
                             self.logger.info(
                                 f"get_chats [{message.topic}]: {message.payload.decode()}"
                             )
-                            await self.get_chats(client, phone)
+                            await self.get_chats(client, connector_id)
                             continue
 
                         elif luri == 4 and uri[3] == "get_contacts":
                             self.logger.info(
                                 f"get_contacts [{message.topic}]: {message.payload.decode()}"
                             )
-                            await self.get_contacts(client, phone)
+                            await self.get_contacts(client, connector_id)
                             continue
 
                         elif luri == 5 and uri[3] == "get_messages":
-                            await self.get_messages(client, phone, int(uri[4]))
+                            await self.get_messages(client, connector_id, int(uri[4]))
                             continue
 
                         elif luri == 5 and uri[3] == "get_contact":
-                            await self.get_contact(client, phone, int(uri[4]))
+                            await self.get_contact(client, connector_id, int(uri[4]))
                             continue
 
                     # telegram/configure
@@ -119,13 +119,13 @@ class Mosquitto(Dispatchable):
         if step.get("step") == "finished":
 
             # Send all chats now to moca
-            await self.get_chats(client, flow.phone)
+            await self.get_chats(client, flow_id)
 
-    async def get_chats(self, client, phone):
+    async def get_chats(self, client, connector_id):
 
-        self.logger.info("Get chats for user %s (triggered by mqtt)", phone)
+        self.logger.info("Get chats for connector %s (triggered by mqtt)", connector_id)
 
-        tg: TelegramClient = await self._session_storage.get_session(phone)
+        tg: TelegramClient = await self._session_storage.get_session(connector_id)
 
         if not await tg.is_user_authorized():
             self.logger.warning("User not authorized")
@@ -160,7 +160,7 @@ class Mosquitto(Dispatchable):
             )
 
         await client.publish(
-            f"moca/via/telegram/{me_id}/chats", json.dumps(chats)
+            f"moca/via/telegram/{connector_id}/chats", json.dumps(chats)
         )
 
     @staticmethod
@@ -176,12 +176,12 @@ class Mosquitto(Dispatchable):
             },
         }
 
-    async def get_messages(self, client, phone: str, chat_id: int):
+    async def get_messages(self, client, connector_id: str, chat_id: int):
         """Get a single chat for a user by chat_id."""
 
-        self.logger.info("Get chat %s for user %s (triggered by mqtt)", chat_id, phone)
+        self.logger.info("Get chat %s for user %s (triggered by mqtt)", chat_id, connector_id)
 
-        tg: TelegramClient = await self._session_storage.get_session(phone)
+        tg: TelegramClient = await self._session_storage.get_session(connector_id)
 
         if not await tg.is_user_authorized():
             self.logger.warning("User not authorized")
@@ -192,18 +192,18 @@ class Mosquitto(Dispatchable):
         messages = await tg.get_messages(chat, 25)
 
         await client.publish(
-            f"telegram/users/{phone}/get_messages/{chat_id}/response",
+            f"telegram/users/{connector_id}/get_messages/{chat_id}/response",
             json.dumps(
                 [self.convert_tg_message_to_message(tg_message) for tg_message in messages]
             ),
         )
 
-    async def get_contact(self, client, phone: str, contact_id: int):
+    async def get_contact(self, client, connector_id: str, contact_id: int):
         """Get a single contact of a user by chat_id."""
 
-        self.logger.info("Get contact %s for user %s (triggered by mqtt)", contact_id, phone)
+        self.logger.info("Get contact %s for user %s (triggered by mqtt)", contact_id, connector_id)
 
-        tg: TelegramClient = await self._session_storage.get_session(phone)
+        tg: TelegramClient = await self._session_storage.get_session(connector_id)
 
         if not await tg.is_user_authorized():
             self.logger.warning("User not authorized")
@@ -231,7 +231,7 @@ class Mosquitto(Dispatchable):
             pass
 
         await client.publish(
-            f"telegram/users/{phone}/get_contact/{contact_id}/response",
+            f"telegram/users/{connector_id}/get_contact/{contact_id}/response",
             json.dumps(
                 contact
             ),
