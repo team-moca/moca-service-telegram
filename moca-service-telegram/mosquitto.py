@@ -76,6 +76,13 @@ class Mosquitto(Dispatchable):
                             await self.get_contacts(client, connector_id)
                             continue
 
+                        elif luri == 4 and uri[3] == "send_message":
+                            self.logger.info(
+                                f"send_message [{message.topic}]: {message.payload.decode()}"
+                            )
+                            await self.send_message(client, connector_id, json.loads(message.payload.decode()))
+                            continue
+
                         elif luri == 4 and uri[3] == "delete":
                             self.logger.info(
                                 f"delete [{message.topic}]: {message.payload.decode()}"
@@ -148,6 +155,13 @@ class Mosquitto(Dispatchable):
 
             self.logger.info(f"Found dialog \"{dialog.title}\"")
 
+            participants = []
+
+            if dialog.is_group:
+                participants = [participant.id for participant in await tg.get_participants(dialog)]
+            else:
+                participants = list(set([dialog.id, me_id]))
+
             last_message = {
                 "message_id": dialog.message.id,
                 "contact_id": dialog.message.sender_id,
@@ -165,6 +179,7 @@ class Mosquitto(Dispatchable):
                     "chat_id": dialog.id,
                     "chat_type": "ChatType.group" if dialog.is_group else "ChatType.single",
                     "last_message": last_message,
+                    "participants": participants
                 }
             )
 
@@ -278,3 +293,35 @@ class Mosquitto(Dispatchable):
                 {"success": True}
             ),
         )
+
+    async def send_message(self, client, connector_id: str, message: Dict):
+        """Send a message."""
+
+        self.logger.info("Send message via %s (triggered by mqtt)", connector_id)
+
+        print(message)
+
+        tg: TelegramClient = await self._session_storage.get_session(connector_id)
+
+        if tg:
+
+            if not await tg.is_user_authorized():
+                self.logger.warning("User not authorized")
+                return
+
+            content = message.get("message")
+            chat_id = message.get("chat_id")
+
+            if content and chat_id:
+                content_type = content.get("type")
+                content_content = content.get("content")
+
+                if content_type == "text" and content:
+                    sent = await tg.send_message(chat_id, content_content)
+
+                    await client.publish(
+                        f"telegram/users/{connector_id}/send_message/response",
+                        json.dumps(
+                            self.convert_tg_message_to_message(sent)
+                        ),
+                    )
