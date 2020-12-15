@@ -7,7 +7,7 @@ import uuid
 
 from asyncio_mqtt import Client, MqttError
 from telethon import TelegramClient
-from telethon.tl.types import PeerChat, Chat, User, Channel
+from telethon.tl.types import Message, PeerChat, Chat, User, Channel
 
 from .dispatcher import Dispatchable
 from .session_storage import SessionStorage
@@ -188,16 +188,112 @@ class Mosquitto(Dispatchable):
         )
 
     @staticmethod
-    def convert_tg_message_to_message(tg_message):
+    async def convert_tg_message_to_message(tg_message: Message, connector_id):
+
+        print(tg_message)
+
+        message = {}
+
+        if tg_message.photo:
+            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            print('Image saved to', path)  # printed after download is done
+
+            message = {
+                "type": "image",
+                "url": path.replace("../moca-server/storage/", ""),
+                "content": tg_message.text,
+            }
+
+        elif tg_message.audio:
+            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            print('audio saved to', path)  # printed after download is done
+
+            message = {
+                "type": "audio",
+                "url": path.replace("../moca-server/storage/", ""),
+                "content": tg_message.text,
+            }
+
+        elif tg_message.voice:
+            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            print('voice saved to', path)  # printed after download is done
+
+            message = {
+                "type": "voice",
+                "url": path.replace("../moca-server/storage/", ""),
+                "content": tg_message.text,
+            }
+
+        elif tg_message.video or tg_message.video_note:
+            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            print('video saved to', path)  # printed after download is done
+
+            message = {
+                "type": "video",
+                "url": path.replace("../moca-server/storage/", ""),
+                "content": tg_message.text,
+            }
+
+        elif tg_message.gif:
+            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            print('gif saved to', path)  # printed after download is done
+
+            message = {
+                "type": "gif",
+                "url": path.replace("../moca-server/storage/", ""),
+                "content": tg_message.text,
+            }
+
+        elif tg_message.document:
+            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            print('Document saved to', path)  # printed after download is done
+
+            message = {
+                "type": "document",
+                "url": path.replace("../moca-server/storage/", ""),
+                "content": tg_message.text,
+            }
+
+        elif tg_message.contact:
+            message = {
+                "type": "contact",
+                "content": tg_message.contact.vcard,
+            }
+
+        elif tg_message.geo:
+            message = {
+                "type": "geo",
+                "geo_point": {
+                    "lon": tg_message.geo.long,
+                    "lat": tg_message.geo.lat
+                }
+            }
+
+        elif tg_message.dice:
+            # Convert dice messages to a string: "🎲 (2)"
+
+            message = {
+                "type": "text",
+                "content": f"{tg_message.dice.emoticon} ({tg_message.dice.value})"
+            }
+
+        elif tg_message.message:
+            message = {
+                "type": "text",
+                "content": tg_message.text,
+            }
+
+        else:
+            message = {
+                "type": "unsupported",
+            }
+
         return {
             "message_id": tg_message.id,
             "contact_id": tg_message.sender_id,
             "chat_id": tg_message.chat_id,
             "sent_datetime": tg_message.date.isoformat(),
-            "message": {
-                "type": "text" if tg_message.message else "unsupported",
-                "content": tg_message.text,
-            },
+            "message": message
         }
 
     async def handle_event(self, connector_id, event):
@@ -205,7 +301,7 @@ class Mosquitto(Dispatchable):
             await client.publish(
                 f"moca/via/telegram/{connector_id}/messages",
                 json.dumps(
-                    [self.convert_tg_message_to_message(event.message)]
+                    [await self.convert_tg_message_to_message(event.message, connector_id)]
                 ),
             )
 
@@ -227,7 +323,7 @@ class Mosquitto(Dispatchable):
         await client.publish(
             f"telegram/users/{connector_id}/get_messages/{chat_id}/response",
             json.dumps(
-                [self.convert_tg_message_to_message(tg_message) for tg_message in messages]
+                [await self.convert_tg_message_to_message(tg_message, connector_id) for tg_message in messages]
             ),
         )
 
@@ -322,6 +418,6 @@ class Mosquitto(Dispatchable):
                     await client.publish(
                         f"telegram/users/{connector_id}/send_message/response",
                         json.dumps(
-                            self.convert_tg_message_to_message(sent)
+                            self.convert_tg_message_to_message(sent, connector_id)
                         ),
                     )
