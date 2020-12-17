@@ -1,3 +1,4 @@
+import base64
 import asyncio
 import json
 import logging
@@ -7,7 +8,7 @@ import uuid
 
 from asyncio_mqtt import Client, MqttError
 from telethon import TelegramClient
-from telethon.tl.types import Message, PeerChat, Chat, User, Channel
+from telethon.tl.types import Message, PeerChannel, PeerChat, Chat, PeerUser, User, Channel
 
 from .dispatcher import Dispatchable
 from .session_storage import SessionStorage
@@ -53,57 +54,52 @@ class Mosquitto(Dispatchable):
                     luri = len(uri)
 
                     # Ignore non telegram messages and responses from self
-                    if luri == 0 or uri[0] != "telegram" or uri[luri - 1] == "response":
+                    if luri == 0 or uri[0] != "telegram" or uri[luri - 1] == "response" or luri < 4:
                         self.logger.info(f"Ignoring [{message.topic}]")
                         continue
 
-                    # telegram/users
-                    if luri >= 3 and uri[1] == "users":
+                    # {service_type}/{connector_id}/{uuid}/{command}
+                    connector_id = int(uri[1])
+                    cmd = uri[3]
 
-                        connector_id = uri[2]
+                    if cmd == "get_chats":
+                        self.logger.info(
+                            f"get_chats [{message.topic}]: {message.payload.decode()}"
+                        )
+                        await self.get_chats(client, connector_id)
+                        continue
 
-                        if luri == 4 and uri[3] == "get_chats":
-                            self.logger.info(
-                                f"get_chats [{message.topic}]: {message.payload.decode()}"
-                            )
-                            await self.get_chats(client, connector_id)
-                            continue
+                    elif cmd == "send_message":
+                        self.logger.info(
+                            f"send_message [{message.topic}]: {message.payload.decode()}"
+                        )
+                        await self.send_message(client, connector_id, json.loads(message.payload.decode()), f"{message.topic}/response")
+                        continue
 
-                        elif luri == 4 and uri[3] == "get_contacts":
-                            self.logger.info(
-                                f"get_contacts [{message.topic}]: {message.payload.decode()}"
-                            )
-                            await self.get_contacts(client, connector_id)
-                            continue
-
-                        elif luri == 4 and uri[3] == "send_message":
-                            self.logger.info(
-                                f"send_message [{message.topic}]: {message.payload.decode()}"
-                            )
-                            await self.send_message(client, connector_id, json.loads(message.payload.decode()))
-                            continue
-
-                        elif luri == 4 and uri[3] == "delete":
-                            self.logger.info(
-                                f"delete [{message.topic}]: {message.payload.decode()}"
-                            )
-                            await self.delete(client, connector_id)
-                            continue
-
-                        elif luri == 5 and uri[3] == "get_messages":
-                            await self.get_messages(client, connector_id, int(uri[4]))
-                            continue
-
-                        elif luri == 5 and uri[3] == "get_contact":
-                            await self.get_contact(client, connector_id, int(uri[4]))
-                            continue
-
-                    # telegram/configure
-                    if luri >= 3 and uri[1] == "configure":
+                    elif cmd == "configure":
                         self.logger.info(
                             f"configure [{message.topic}]: {message.payload.decode()}"
                         )
-                        await self.configure(client, uri[2], message)
+                        await self.configure(client, connector_id, message)
+                        continue
+
+                    elif cmd == "delete_connector":
+                        self.logger.warning(
+                            f"delete [{message.topic}]: {message.payload.decode()}"
+                        )
+                        await self.delete(client, connector_id, f"{message.topic}/response")
+                        continue
+
+                    elif luri == 5 and cmd == "get_messages":
+                        await self.get_messages(client, connector_id, int(uri[4]), f"{message.topic}/response")
+                        continue
+
+                    elif luri == 5 and cmd == "get_contact":
+                        await self.get_contact(client, connector_id, int(uri[4]), f"{message.topic}/response")
+                        continue
+
+                    elif luri == 5 and cmd == "get_media":
+                        await self.get_media(client, connector_id, uri[4], f"{message.topic}/response")
                         continue
 
                     self.logger.warning(
@@ -135,7 +131,13 @@ class Mosquitto(Dispatchable):
         if step.get("step") == "finished":
 
             # Send all chats now to moca
-            await self.get_chats(client, flow_id)
+            dialogs = await self.get_chats(client, flow_id)
+
+            # Send last 100 messages of the newest 10 chats
+
+            for dialog in dialogs[:10]:
+                await self.get_messages(client, flow_id, dialog.id, f"moca/via/telegram/{flow_id}/messages")
+
 
     async def get_chats(self, client, connector_id):
 
@@ -150,8 +152,9 @@ class Mosquitto(Dispatchable):
         me_id = (await tg.get_me()).id
 
         chats = []
+        dialogs = await tg.get_dialogs()
 
-        for dialog in await tg.get_dialogs():
+        for dialog in dialogs:
 
             self.logger.info(f"Found dialog \"{dialog.title}\"")
 
@@ -186,71 +189,72 @@ class Mosquitto(Dispatchable):
         await client.publish(
             f"moca/via/telegram/{connector_id}/chats", json.dumps(chats)
         )
+        return dialogs
 
-    @staticmethod
-    async def convert_tg_message_to_message(tg_message: Message, connector_id):
+    async def convert_tg_message_to_message(self, tg_message: Message, connector_id):
 
         print(tg_message)
 
         message = {}
+        chat_id = self.get_id(tg_message.peer_id)
 
         if tg_message.photo:
-            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
-            print('Image saved to', path)  # printed after download is done
+            #path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            #print('Image saved to', path)  # printed after download is done
 
             message = {
                 "type": "image",
-                "url": path.replace("../moca-server/storage/", ""),
+                "url": f"/chats/{chat_id}/messages/{tg_message.id}/media",
                 "content": tg_message.text,
             }
 
         elif tg_message.audio:
-            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
-            print('audio saved to', path)  # printed after download is done
+            #path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            #print('audio saved to', path)  # printed after download is done
 
             message = {
                 "type": "audio",
-                "url": path.replace("../moca-server/storage/", ""),
+                "url": f"/chats/{chat_id}/messages/{tg_message.id}/media",
                 "content": tg_message.text,
             }
 
         elif tg_message.voice:
-            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
-            print('voice saved to', path)  # printed after download is done
+            #path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            #print('voice saved to', path)  # printed after download is done
 
             message = {
                 "type": "voice",
-                "url": path.replace("../moca-server/storage/", ""),
+                "url": f"/chats/{chat_id}/messages/{tg_message.id}/media",
                 "content": tg_message.text,
             }
 
         elif tg_message.video or tg_message.video_note:
-            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
-            print('video saved to', path)  # printed after download is done
+            #path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            #print('video saved to', path)  # printed after download is done
 
             message = {
                 "type": "video",
-                "url": path.replace("../moca-server/storage/", ""),
+                "url": f"/chats/{chat_id}/messages/{tg_message.id}/media",
                 "content": tg_message.text,
             }
 
         elif tg_message.gif:
-            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
-            print('gif saved to', path)  # printed after download is done
+            #path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            #print('gif saved to', path)  # printed after download is done
 
             message = {
                 "type": "gif",
-                "url": path.replace("../moca-server/storage/", ""),
+                "url": f"/chats/{chat_id}/messages/{tg_message.id}/media",
                 "content": tg_message.text,
             }
 
         elif tg_message.document:
-            path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
-            print('Document saved to', path)  # printed after download is done
+            #path = await tg_message.download_media(f"../moca-server/storage/{str(uuid.uuid4())}")
+            #print('Document saved to', path)  # printed after download is done
 
             message = {
                 "type": "document",
-                "url": path.replace("../moca-server/storage/", ""),
+                "url": f"/chats/{chat_id}/messages/{tg_message.id}/media",
                 "content": tg_message.text,
             }
 
@@ -305,7 +309,7 @@ class Mosquitto(Dispatchable):
                 ),
             )
 
-    async def get_messages(self, client, connector_id: str, chat_id: int):
+    async def get_messages(self, client, connector_id: str, chat_id: int, response_topic: str):
         """Get a single chat for a user by chat_id."""
 
         self.logger.info("Get chat %s for user %s (triggered by mqtt)", chat_id, connector_id)
@@ -321,13 +325,56 @@ class Mosquitto(Dispatchable):
         messages = await tg.get_messages(chat, 25)
 
         await client.publish(
-            f"telegram/users/{connector_id}/get_messages/{chat_id}/response",
+            response_topic,
             json.dumps(
                 [await self.convert_tg_message_to_message(tg_message, connector_id) for tg_message in messages]
             ),
         )
 
-    async def get_contact(self, client, connector_id: str, contact_id: int):
+    async def get_media(self, client, connector_id: int, uri: str, response_topic: str):
+        """Get a media file by message id."""
+
+        parts = uri.split(":")
+        chat_id = int(parts[2])
+        message_id = int(parts[3])
+
+        tg: TelegramClient = await self._session_storage.get_session(connector_id)
+
+        if not await tg.is_user_authorized():
+            self.logger.warning("User not authorized")
+            return
+
+        chat: Chat = await tg.get_entity(chat_id)
+
+        message: Message = None
+        async for msg in tg.iter_messages(chat, ids=message_id):
+            message = msg
+
+        # path = await message.download_media(f"storage/{str(uuid.uuid4())}")
+        # print('File saved to', path)  # printed after download is done
+
+        async for chunk in tg.iter_download(message.media, chunk_size=1048576):
+            await client.publish(
+                response_topic,
+                json.dumps(
+                    {
+                        "data": base64.b64encode(chunk).decode()
+                    }
+                ),
+            )
+
+        await client.publish(
+                response_topic,
+                json.dumps(
+                    {
+                        "data": None,
+                        "filename": f"telegram_{connector_id}_{chat_id}_{message_id}{message.file.ext}",
+                        "mime": message.file.mime_type
+                    }
+                ),
+            )
+
+    async def get_contact(self, client, connector_id: str, contact_id: int, response_topic: str):
         """Get a single contact of a user by chat_id."""
 
         self.logger.info("Get contact %s for user %s (triggered by mqtt)", contact_id, connector_id)
@@ -360,14 +407,14 @@ class Mosquitto(Dispatchable):
             pass
 
         await client.publish(
-            f"telegram/users/{connector_id}/get_contact/{contact_id}/response",
+            response_topic,
             json.dumps(
                 contact
             ),
         )
 
 
-    async def delete(self, client, connector_id: str):
+    async def delete(self, client, connector_id: str, response_topic: str):
         """Delete a connector."""
 
         self.logger.info("Delete connector %s (triggered by mqtt)", connector_id)
@@ -375,22 +422,17 @@ class Mosquitto(Dispatchable):
         tg: TelegramClient = await self._session_storage.get_session(connector_id)
 
         if tg:
-
-            if not await tg.is_user_authorized():
-                self.logger.warning("User not authorized")
-                return
-
             await tg.disconnect()
             await self._session_storage.delete_session(connector_id)
 
         await client.publish(
-            f"telegram/users/{connector_id}/delete/response",
+            response_topic,
             json.dumps(
                 {"success": True}
             ),
         )
 
-    async def send_message(self, client, connector_id: str, message: Dict):
+    async def send_message(self, client, connector_id: str, message: Dict, response_topic: str):
         """Send a message."""
 
         self.logger.info("Send message via %s (triggered by mqtt)", connector_id)
@@ -416,8 +458,20 @@ class Mosquitto(Dispatchable):
                     sent = await tg.send_message(chat_id, content_content)
 
                     await client.publish(
-                        f"telegram/users/{connector_id}/send_message/response",
+                        response_topic,
                         json.dumps(
-                            self.convert_tg_message_to_message(sent, connector_id)
+                            await self.convert_tg_message_to_message(sent, connector_id)
                         ),
                     )
+
+    @staticmethod
+    def get_id(peer):
+        if type(peer) is PeerUser:
+            return peer.user_id
+        elif type(peer) is PeerChat:
+            return peer.chat_id
+        elif type(peer) is PeerChannel:
+            return peer.channel_id
+
+        # Otherwise it's an anonymous message which should return None
+        return None

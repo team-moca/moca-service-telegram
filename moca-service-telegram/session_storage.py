@@ -23,12 +23,9 @@ class SessionStorage:
         self.sessions.pop(connector_id, None)
         os.remove(f"sessions/{connector_id}.session")
 
-    async def get_session(self, username):
+    async def get_session(self, connector_id: int):
 
-        self.logger.debug("Get session for user %s", username)
-
-        # hashed_username = hashlib.sha224(username.encode()).hexdigest()
-        connector_id = username.replace("+", "00")
+        self.logger.debug("Get session for user %s", connector_id)
 
         session = self.sessions.get(connector_id)
 
@@ -60,16 +57,3 @@ class SessionStorage:
 
         # Otherwise it's an anonymous message which should return None
         return None
-
-    @staticmethod
-    def convert_tg_message_to_message(tg_message):
-        return {
-            "message_id": tg_message.id,
-            "contact_id": tg_message.sender_id,
-            "chat_id": tg_message.chat_id,
-            "sent_datetime": tg_message.date.isoformat(),
-            "message": {
-                "type": "text" if tg_message.message else "unsupported",
-                "content": tg_message.text,
-            },
-        }
