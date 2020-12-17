@@ -119,3 +119,4 @@ venv/
 .idea/
 *.log
 config.yml
+*.db

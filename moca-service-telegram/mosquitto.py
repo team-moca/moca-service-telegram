@@ -117,6 +117,23 @@ class Mosquitto(Dispatchable):
             except asyncio.CancelledError:
                 pass
 
+    async def load_missed(self):
+        async with Client("localhost") as client:
+            # Load messages that were send while the connector was offline
+            for connector_id_str in self._session_storage.db.getall():
+                connector_id = int(connector_id_str)
+                chats = self._session_storage.get_extra(connector_id)
+
+                for chat_id in chats:
+                    chat = chats[chat_id]
+
+                    last_message_id = chat.get("last_message")
+
+                    if last_message_id:
+                        print(f"Last message id in chat {chat_id} was {last_message_id}. Receiving missed messages now...")
+                        await self.get_messages(client, connector_id, int(chat_id), f"moca/via/telegram/{connector_id}/messages", min_id=int(last_message_id))
+
+
     async def configure(self, client, flow_id, message):
         self.logger.debug("Configure telegram service (triggered by mqtt)")
         flow: ConfigFlow = self._configurator.get_flow(flow_id)
@@ -302,6 +319,13 @@ class Mosquitto(Dispatchable):
 
     async def handle_event(self, connector_id, event):
         async with Client("localhost") as client:
+
+            self._session_storage.update_extra(connector_id, {
+                str(self.get_id(event.message.peer_id)): {
+                    "last_message": event.message.id
+                } 
+            })
+
             await client.publish(
                 f"moca/via/telegram/{connector_id}/messages",
                 json.dumps(
@@ -309,7 +333,7 @@ class Mosquitto(Dispatchable):
                 ),
             )
 
-    async def get_messages(self, client, connector_id: str, chat_id: int, response_topic: str):
+    async def get_messages(self, client, connector_id: str, chat_id: int, response_topic: str, min_id=None, max_id=None, limit=25):
         """Get a single chat for a user by chat_id."""
 
         self.logger.info("Get chat %s for user %s (triggered by mqtt)", chat_id, connector_id)
@@ -322,7 +346,18 @@ class Mosquitto(Dispatchable):
 
         chat: Chat = await tg.get_entity(chat_id)
 
-        messages = await tg.get_messages(chat, 25)
+        if min_id:
+            messages = await tg.get_messages(chat, limit, min_id=min_id)
+        else:
+            messages = await tg.get_messages(chat, limit)
+
+
+        if len(messages) > 0:
+            self._session_storage.update_extra(connector_id, {
+                str(chat.id): {
+                    "last_message": messages[-1].id
+                }
+            })
 
         await client.publish(
             response_topic,

@@ -34,16 +34,17 @@ class Container(containers.DeclarativeContainer):
         sessions
     )
 
-    startup = providers.Singleton(
-        Startup,
-        sessions
-    )
-
     mqtt = providers.Singleton(
         Mosquitto,
         configurator,
         sessions,
         config.mqtt
+    )
+
+    startup = providers.Singleton(
+        Startup,
+        sessions,
+        mqtt
     )
 
     dispatcher = providers.Factory(

@@ -1,3 +1,4 @@
+import pickledb
 import json
 import logging
 import os
@@ -17,6 +18,8 @@ class SessionStorage:
         self.logger.info("Setup session storage")
 
         self.callbacks = []
+
+        self.db = pickledb.load("telegram.db", True)
 
 
     async def delete_session(self, connector_id):
@@ -45,6 +48,17 @@ class SessionStorage:
             self.logger.debug("No session found. Created new session...")
 
         return session
+
+    def get_extra(self, connector_id: int) -> Dict:
+        return self.db.get(str(connector_id))
+
+    def set_extra(self, connector_id: int, data: Dict) -> bool:
+        return self.db.set(str(connector_id), data)
+
+    def update_extra(self, connector_id: int, data: Dict) -> bool:
+        extra = self.get_extra(connector_id) or {}
+        extra.update(data)
+        return self.set_extra(connector_id, extra)
 
     @staticmethod
     def get_id(peer):
