@@ -335,8 +335,8 @@ class Mosquitto(Dispatchable):
         """Get a media file by message id."""
 
         parts = uri.split(":")
-        chat_id = int(parts[2])
-        message_id = int(parts[3])
+        chat_id = int(parts[0])
+        message_id = int(parts[1])
 
         tg: TelegramClient = await self._session_storage.get_session(connector_id)
 
