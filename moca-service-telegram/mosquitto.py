@@ -483,7 +483,7 @@ class Mosquitto(Dispatchable):
                 return
 
             content = message.get("message")
-            chat_id = message.get("chat_id")
+            chat_id = int(message.get("chat_id"))
 
             if content and chat_id:
                 content_type = content.get("type")
