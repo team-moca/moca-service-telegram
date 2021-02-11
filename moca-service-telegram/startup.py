@@ -17,7 +17,7 @@ class Startup(Dispatchable):
         for session_name in Path("sessions").rglob("*.session"):
             session = await self._session_storage.get_session(int(session_name.name[:-8]))
             await session.start()
-            await self._mqtt.load_missed()
+            #await self._mqtt.load_missed()
             i += 1
 
         self.logger.info(f"Initialized {i} sessions.")

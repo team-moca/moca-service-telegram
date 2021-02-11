@@ -74,7 +74,7 @@ class ConfigFlow:
             me = await tg.get_me()
 
             self.contact = {
-                "id": me.id,
+                "contact_id": me.id,
                 "name": f"{me.first_name} {me.last_name}",
                 "username": me.username,
                 "phone": f"+{me.phone}",
@@ -95,7 +95,7 @@ class ConfigFlow:
                 me = await tg.get_me()
 
                 self.contact = {
-                    "id": me.id,
+                    "contact_id": me.id,
                     "name": f"{me.first_name} {me.last_name}",
                     "username": me.username,
                     "phone": f"+{me.phone}",

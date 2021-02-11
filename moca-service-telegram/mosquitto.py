@@ -195,8 +195,8 @@ class Mosquitto(Dispatchable):
 
             chats.append(
                 {
-                    "name": dialog.title,
                     "chat_id": dialog.id,
+                    "name": dialog.title,
                     "chat_type": "ChatType.group" if dialog.is_group else "ChatType.single",
                     "last_message": last_message,
                     "participants": participants
