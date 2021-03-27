@@ -3,6 +3,7 @@
 
 from dependency_injector.wiring import inject, Provide
 
+import os
 import sys
 
 from .dispatcher import Dispatcher
@@ -15,7 +16,7 @@ def main(dispatcher: Dispatcher = Provide[Container.dispatcher]) -> None:
 
 if __name__ == "__main__":
     container = Container()
-    container.config.from_yaml("config.yml")
+    container.config.from_yaml(os.getenv("CONFIG_FILE", "config.yml"))
     container.init_resources()
     container.wire(modules=[sys.modules[__name__]])
 
