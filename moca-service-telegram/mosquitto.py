@@ -41,7 +41,7 @@ class Mosquitto(Dispatchable):
         self._session_storage.callbacks.append(self.handle_event)
 
     async def run(self):
-        async with Client("localhost") as client:
+        async with Client(self.hostname) as client:
 
             await client.subscribe("telegram/#")
             await client.subscribe("debug/#")
@@ -118,7 +118,7 @@ class Mosquitto(Dispatchable):
                 pass
 
     async def load_missed(self):
-        async with Client("localhost") as client:
+        async with Client(self.hostname) as client:
             # Load messages that were send while the connector was offline
             for connector_id_str in self._session_storage.db.getall():
                 connector_id = int(connector_id_str)
@@ -318,7 +318,7 @@ class Mosquitto(Dispatchable):
         }
 
     async def handle_event(self, connector_id, event):
-        async with Client("localhost") as client:
+        async with Client(self.hostname) as client:
 
             self._session_storage.update_extra(connector_id, {
                 str(self.get_id(event.message.peer_id)): {
