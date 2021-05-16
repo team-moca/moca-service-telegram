@@ -2,5 +2,5 @@ Telethon==1.17.5
 asyncio_mqtt==0.7.0
 coloredlogs==14.0
 dependency_injector==4.4.1
-PyYAML==5.3.1
+PyYAML==5.4
 pickledb==0.9.2
