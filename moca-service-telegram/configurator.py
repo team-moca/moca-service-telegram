@@ -1,13 +1,18 @@
+import logging
+from .session_storage import SessionStorage
+
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 from telethon.tl.types import User
 from telethon.tl.types.account import Password
 from telethon.tl.types.auth import SentCode
-import schema
+from . import schema
+
 
 class ConfigFlow:
-    def __init__(self, session_storage):
+    def __init__(self, flow_id, session_storage: SessionStorage):
         super().__init__()
+        self.flow_id = flow_id
         self.session_storage = session_storage
         self.current_step = self.step_user
 
@@ -22,7 +27,7 @@ class ConfigFlow:
         self.current_step = self.step_user
 
         # TODO validate schema
-        if user_input and user_input.get("phone"):
+        if user_input:
             self.phone = user_input.get("phone")
             return await self._login()
 
@@ -37,7 +42,10 @@ class ConfigFlow:
             self.code = user_input.get("verification_code")
             return await self._login()
 
-        return {"step": "verification_code", "schema": schema.schemas.get("verification_code")}
+        return {
+            "step": "verification_code",
+            "schema": schema.schemas.get("verification_code"),
+        }
 
     async def step_password(self, user_input=None):
         """Optional third step, if the user activated 2FA with password."""
@@ -55,7 +63,7 @@ class ConfigFlow:
         return {"step": "finished", "data": {"contact": self.contact}}
 
     async def _login(self):
-        tg: TelegramClient = await self.session_storage.get_session(self.phone)
+        tg: TelegramClient = await self.session_storage.get_session(self.flow_id)
 
         if not tg.is_connected():
             print("Connecting to Telegram...")
@@ -66,10 +74,10 @@ class ConfigFlow:
             me = await tg.get_me()
 
             self.contact = {
-                "id": me.id,
+                "contact_id": me.id,
                 "name": f"{me.first_name} {me.last_name}",
                 "username": me.username,
-                "phone": f"+{me.phone}"
+                "phone": f"+{me.phone}",
             }
 
             return await self.step_finished()
@@ -87,10 +95,10 @@ class ConfigFlow:
                 me = await tg.get_me()
 
                 self.contact = {
-                    "id": me.id,
+                    "contact_id": me.id,
                     "name": f"{me.first_name} {me.last_name}",
                     "username": me.username,
-                    "phone": f"+{me.phone}"
+                    "phone": f"+{me.phone}",
                 }
 
                 return await self.step_finished()
@@ -109,3 +117,22 @@ class ConfigFlow:
             return await self.step_password()
         except Exception as e:
             print(f"unknown error: " + e)
+
+
+class Configurator:
+    def __init__(self, session_storage: SessionStorage):
+        super().__init__()
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+        self.session_storage = session_storage
+        self.active_flows = {}
+        self.logger.info("Starting configurator")
+
+    def get_flow(self, flow_id):
+
+        flow = self.active_flows.get(flow_id)
+
+        if not flow:
+            self.active_flows[flow_id] = ConfigFlow(flow_id, self.session_storage)
+
+        return self.active_flows.get(flow_id)
