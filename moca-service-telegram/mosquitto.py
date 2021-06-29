@@ -98,8 +98,10 @@ class Mosquitto(Dispatchable):
                         await self.get_contact(client, connector_id, int(uri[4]), f"{message.topic}/response")
                         continue
 
-                    elif luri == 5 and cmd == "get_media":
-                        await self.get_media(client, connector_id, uri[4], f"{message.topic}/response")
+                    # telegram/+/+/chats/+/messages/+/get_media
+
+                    elif luri == 8 and uri[7] == "get_media":
+                        await self.get_media(client, connector_id, int(uri[4]), int(uri[6]), f"{message.topic}/response")
                         continue
 
                     self.logger.warning(
@@ -366,12 +368,8 @@ class Mosquitto(Dispatchable):
             ),
         )
 
-    async def get_media(self, client, connector_id: int, uri: str, response_topic: str):
+    async def get_media(self, client, connector_id: int, chat_id: int, message_id: int, response_topic: str):
         """Get a media file by message id."""
-
-        parts = uri.split(":")
-        chat_id = int(parts[0])
-        message_id = int(parts[1])
 
         tg: TelegramClient = await self._session_storage.get_session(connector_id)
 
